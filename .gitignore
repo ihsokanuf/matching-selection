@@ -1,0 +1,4 @@
+config.ini
+*.csv
+*.log
+!sample.csv
