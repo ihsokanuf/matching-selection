@@ -2,3 +2,6 @@ config.ini
 *.csv
 *.log
 !sample.csv
+dist
+build
+*.spec

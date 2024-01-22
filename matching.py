@@ -3,6 +3,7 @@ import csv
 import hashlib
 import logging
 import os
+import sys
 from statistics import median
 
 
@@ -71,8 +72,6 @@ def read_targets_from_csv(file_path):
 
     logging.info(f"Reading file: {file_path}")  # Log the file name
 
-    # Rest of the code...
-
     # Read the entire CSV at once
     rows = []
     with open(
@@ -93,6 +92,19 @@ def read_targets_from_csv(file_path):
             )
         data = {i: row for i, row in enumerate(rows, start=1)}
 
+    # Log the header names and column numbers
+    for i, header in enumerate(headers, start=1):
+        logging.info(f"Header: Column Number {i} : {header}")
+
+    # Log the first record
+    logging.info("Logging the first record...")
+    if not data:
+        logging.error("No records found.")
+    else:
+        first_record = data[1]
+        for key, value in first_record.items():
+            logging.info(f"{key}: {value}")
+
     # Calculate medians and max values for normalization
     medians = {}
     max_values = {}
@@ -101,9 +113,17 @@ def read_targets_from_csv(file_path):
         if not column_value:
             continue
         column_index = int(column_value) - 1
-        values = [int(row[list(row.keys())[column_index]]) for row in rows]
+        try:
+            values = [int(row[list(row.keys())[column_index]]) for row in rows]
+        except Exception as e:
+            logging.error(f"An error occurred: {str(e)}")
+            print(f"An error occurred: {str(e)}")
+            print("Please check the log file for more details.")
+            sys.exit(1)
         medians[param] = median(values)
         max_values[param] = max(values)
+    logging.info(f"Medians: {medians}")
+    logging.info(f"Max values: {max_values}")
 
     # Process CSV data
     for row in rows:
@@ -204,6 +224,18 @@ def stable_matching(target_preferences, target_params_dict, recruiting_numbers):
         target = unassigned.pop(0)
 
         for preference in target_preferences[target]:
+            # Check if preference is in recruiting numbers
+            if preference not in recruiting_numbers:
+                logging.error(
+                    f"Recruiting numbers not defined for preference: {preference}"
+                )
+                print(
+                    f"Recruiting numbers not defined for preference: {preference}"
+                )
+                print("Please check the log file for more details.")
+                sys.exit(1)
+
+            # Check if preference is in target parameters
             if len(matches[preference]) < recruiting_numbers[preference]:
                 matches[preference].append(target)
                 break
@@ -223,6 +255,7 @@ def stable_matching(target_preferences, target_params_dict, recruiting_numbers):
                         min_score_index = index
                         min_hash = target_hash
 
+                # Check if target score is higher than the minimum score
                 if (
                     target_params_dict[target][preference + "SCORE"] > min_score
                 ) or (
@@ -310,12 +343,19 @@ def merged_data_to_csv(merged, file_path):
             writer.writerow(row)
 
 
+# start of main program
+print("Starting matching program...")
+
 # Logging setup
 delete_file_if_exists("matching.log")
 logging.basicConfig(
     filename="matching.log",
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8",
+)
+print(
+    "The log file 'matching.log' has been generated. Please check the log file for more details."
 )
 
 # Configuration setup
@@ -324,18 +364,25 @@ config = read_configuration("config.ini")
 # Specifying input and output file names
 input_file = config["FILES"]["input_file"]
 output_file = config["FILES"]["output_file"]
+logging.info(f"Input file: {input_file}")
+logging.info(f"Output file: {output_file}")
 
 # Extracting recruiting numbers as dictionary and converting values to integers
 recruiting_numbers = {
     key: int(value) for key, value in config["RECRUIT"].items()
 }
 reserve_numbers = {key: int(value) for key, value in config["RESERVE"].items()}
+logging.info(f"Recruiting numbers: {recruiting_numbers}")
+logging.info(f"Reserve numbers: {reserve_numbers}")
 
 # Lists representing roles for recruiting and reserve members
 recruiting_roles = list(recruiting_numbers.keys())
 reserve_roles = list(reserve_numbers.keys())
+logging.info(f"Recruiting roles: {recruiting_roles}")
+logging.info(f"Reserve roles: {reserve_roles}")
 
 # Reading target parameters and preferences from 'input_file'
+logging.info("Reading target parameters and preferences...")
 target_org, target_params, target_preferences = read_targets_from_csv(
     input_file
 )
@@ -344,9 +391,11 @@ target_org, target_params, target_preferences = read_targets_from_csv(
 target_params_dict = {target["id"]: target for target in target_params}
 
 # Executing the stable matching algorithm and storing the final results
+logging.info("Executing the stable matching algorithm...")
 elected_result = stable_matching(
     target_preferences, target_params_dict, recruiting_numbers
 )
+logging.info("Executing the stable matching algorithm for reserve members...")
 updated_target_preferences = remove_matched_targets_from_preferences(
     elected_result, target_preferences
 )
@@ -358,15 +407,19 @@ alternate_result = stable_matching(
 for role, target_ids in elected_result.items():
     for target_id in target_ids:
         score = target_params_dict[target_id].get(f"{role}SCORE", 0)
-        logging.debug(f"{target_id} is matched with {role}. Score: {score:.2f}")
+        logging.info(f"{target_id} is matched with {role}. Score: {score:.2f}")
 
 for role, target_ids in alternate_result.items():
     for target_id in target_ids:
         score = target_params_dict[target_id].get(f"{role}SCORE", 0)
-        logging.debug(f"{target_id} is matched with {role}. Score: {score:.2f}")
+        logging.info(f"{target_id} is matched with {role}. Score: {score:.2f}")
 
 # Merging the results and writing them to a CSV file
+logging.info("Merging the results and writing them to a CSV file...")
 merged_data = merge_dicts_with_final_result(
     target_org, target_params_dict, elected_result, alternate_result
 )
 merged_data_to_csv(merged_data, output_file)
+
+logging.info("Matching program completed.")
+print("Matching program completed.")
